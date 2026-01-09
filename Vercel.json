@@ -1,5 +1,6 @@
 {
   "builds": [
-    { "src": "index.html", "use": "@vercel/static" }
+    { "src": "CookieClicker.html", "use": "@vercel/static" }
   ]
 }
+
