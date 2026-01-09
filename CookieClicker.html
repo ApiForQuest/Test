@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cookie Crafter</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body {
+      background: radial-gradient(circle at top, #1f2937, #020617);
+    }
+    .cookie {
+      background: radial-gradient(circle at 30% 30%, #fde68a, #92400e);
+      box-shadow: inset -8px -8px 0 rgba(0,0,0,0.15), 0 20px 40px rgba(0,0,0,0.5);
+    }
+    .cookie:active {
+      transform: scale(0.96);
+    }
+    .panel {
+      backdrop-filter: blur(10px);
+      background: rgba(15, 23, 42, 0.75);
+    }
+  </style>
+</head>
+<body class="text-slate-100 min-h-screen flex">
+
+  <!-- Left: Cookie -->
+  <div class="flex flex-col items-center justify-center w-1/3">
+    <div id="cookie" class="cookie w-72 h-72 rounded-full cursor-pointer transition-transform"></div>
+    <div class="mt-6 text-center">
+      <div class="text-4xl font-bold"><span id="cookies">0</span> cookies</div>
+      <div class="text-slate-400"><span id="cps">0</span> cookies per second</div>
+    </div>
+  </div>
+
+  <!-- Middle: Buildings -->
+  <div class="w-1/3 p-4 space-y-3 overflow-y-auto panel">
+    <h2 class="text-2xl font-semibold mb-2">Buildings</h2>
+    <div id="buildings" class="space-y-2"></div>
+  </div>
+
+  <!-- Right: Upgrades -->
+  <div class="w-1/3 p-4 space-y-3 overflow-y-auto panel">
+    <h2 class="text-2xl font-semibold mb-2">Upgrades</h2>
+    <div id="upgrades" class="space-y-2"></div>
+  </div>
+
+<script>
+let cookies = 0;
+let totalCps = 0;
+
+const buildings = [
+  { id: 'cursor', name: 'Cursor', baseCost: 15, cps: 0.1, owned: 0 },
+  { id: 'grandma', name: 'Grandma', baseCost: 100, cps: 1, owned: 0 },
+  { id: 'farm', name: 'Farm', baseCost: 1100, cps: 8, owned: 0 },
+  { id: 'factory', name: 'Factory', baseCost: 13000, cps: 47, owned: 0 },
+  { id: 'bank', name: 'Bank', baseCost: 140000, cps: 260, owned: 0 },
+  { id: 'temple', name: 'Temple', baseCost: 2000000, cps: 1400, owned: 0 },
+  { id: 'wizard', name: 'Wizard Tower', baseCost: 33000000, cps: 7800, owned: 0 },
+  { id: 'portal', name: 'Portal', baseCost: 510000000, cps: 44000, owned: 0 },
+  { id: 'time', name: 'Time Machine', baseCost: 7500000000, cps: 260000, owned: 0 },
+  { id: 'ai', name: 'AI Core', baseCost: 100000000000, cps: 1600000, owned: 0 }
+];
+
+const upgrades = [
+  { name: 'Reinforced Index Finger', cost: 100, multiplier: 2, appliesTo: 'cursor', bought: false },
+  { name: 'Forwards From Grandma', cost: 500, multiplier: 2, appliesTo: 'grandma', bought: false },
+  { name: 'Fertilized Fields', cost: 5000, multiplier: 2, appliesTo: 'farm', bought: false },
+  { name: 'Industrial Optimization', cost: 50000, multiplier: 2, appliesTo: 'factory', bought: false },
+  { name: 'High-Frequency Trading', cost: 500000, multiplier: 2, appliesTo: 'bank', bought: false },
+  { name: 'Ancient Rituals', cost: 5000000, multiplier: 2, appliesTo: 'temple', bought: false },
+  { name: 'Spell Efficiency', cost: 50000000, multiplier: 2, appliesTo: 'wizard', bought: false },
+  { name: 'Demonic Engineering', cost: 500000000, multiplier: 2, appliesTo: 'portal', bought: false },
+  { name: 'Temporal Loops', cost: 5000000000, multiplier: 2, appliesTo: 'time', bought: false },
+  { name: 'Recursive Intelligence', cost: 50000000000, multiplier: 2, appliesTo: 'ai', bought: false }
+];
+
+function format(num) {
+  if (num < 1000) return num.toFixed(1).replace('.0','');
+  const units = ['K','M','B','T','Qa','Qi'];
+  let i = -1;
+  while (num >= 1000 && i < units.length-1) {
+    num /= 1000; i++;
+  }
+  return num.toFixed(2) + units[i];
+}
+
+function updateUI() {
+  document.getElementById('cookies').textContent = format(cookies);
+  document.getElementById('cps').textContent = format(totalCps);
+}
+
+function calcCps() {
+  totalCps = buildings.reduce((sum,b)=>sum + b.cps*b.owned,0);
+}
+
+function buildingCost(b) {
+  return Math.floor(b.baseCost * Math.pow(1.15, b.owned));
+}
+
+function renderBuildings() {
+  const container = document.getElementById('buildings');
+  container.innerHTML = '';
+  buildings.forEach(b => {
+    const cost = buildingCost(b);
+    const div = document.createElement('div');
+    div.className = 'flex justify-between items-center p-3 rounded-xl bg-slate-800/70 hover:bg-slate-700 cursor-pointer';
+    div.innerHTML = `
+      <div>
+        <div class="font-semibold">${b.name}</div>
+        <div class="text-xs text-slate-400">Owned: ${b.owned} · +${b.cps} cps</div>
+      </div>
+      <div class="text-right">
+        <div>${format(cost)}</div>
+      </div>`;
+    div.onclick = () => {
+      if (cookies >= cost) {
+        cookies -= cost;
+        b.owned++;
+        calcCps();
+        renderBuildings();
+        updateUI();
+      }
+    };
+    container.appendChild(div);
+  });
+}
+
+function renderUpgrades() {
+  const container = document.getElementById('upgrades');
+  container.innerHTML = '';
+  upgrades.forEach(u => {
+    if (u.bought) return;
+    const div = document.createElement('div');
+    div.className = 'flex justify-between items-center p-3 rounded-xl bg-amber-900/40 hover:bg-amber-800 cursor-pointer';
+    div.innerHTML = `
+      <div>
+        <div class="font-semibold">${u.name}</div>
+        <div class="text-xs text-amber-200">${u.appliesTo} ×${u.multiplier}</div>
+      </div>
+      <div>${format(u.cost)}</div>`;
+    div.onclick = () => {
+      if (cookies >= u.cost) {
+        cookies -= u.cost;
+        const b = buildings.find(b=>b.id===u.appliesTo);
+        b.cps *= u.multiplier;
+        u.bought = true;
+        calcCps();
+        renderUpgrades();
+        updateUI();
+      }
+    };
+    container.appendChild(div);
+  });
+}
+
+// Cookie click
+const cookieEl = document.getElementById('cookie');
+cookieEl.onclick = () => {
+  cookies += 1;
+  updateUI();
+};
+
+// Game loop
+setInterval(() => {
+  cookies += totalCps / 10;
+  updateUI();
+}, 100);
+
+renderBuildings();
+renderUpgrades();
+updateUI();
+</script>
+</body>
+</html>
