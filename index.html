@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Metascope Poller – Vercel Static</title>
+  <title>Metascope Poller – Every 2s to Discord</title>
   <style>
     body {
       font-family: monospace;
@@ -33,24 +33,34 @@
     }
     button:disabled { opacity: 0.4; cursor: not-allowed; }
     #status { font-weight: bold; color: #ff0; }
+    .warning {
+      color: #ff5555;
+      font-weight: bold;
+      margin: 12px 0;
+    }
   </style>
 </head>
 <body>
 
-<h2>Metascope API → Discord (via public proxy)</h2>
+<h2>Metascope API → Discord (every ~2 seconds – no dedup)</h2>
 
 <p>
-  <strong>Target API:</strong> https://metascope.org/api/apps/gen?app_id=9092019690921877<br>
-  <strong>Polling:</strong> every ~2 seconds<br>
-  <strong>Deduplication:</strong> SHA-256 + localStorage<br>
-  <strong>Warning:</strong> Using public CORS proxy – for testing only!
+  <strong>Target:</strong> https://metascope.org/api/apps/gen?app_id=9092019690921877<br>
+  <strong>Interval:</strong> 2 seconds<br>
+  <strong>Behavior:</strong> Sends EVERY response to Discord (identical or not)<br>
+  <strong>Proxy:</strong> Using public corsproxy.io (for testing – may break)
 </p>
+
+<div class="warning">
+  WARNING: This will spam your Discord channel very quickly.<br>
+  Discord webhooks have rate limits (~30–50 requests per minute burst).<br>
+  Use a test channel / throwaway webhook. You have been warned!
+</div>
 
 <div id="status">Status: stopped</div>
 
 <button id="startBtn">Start polling</button>
 <button id="stopBtn" disabled>Stop polling</button>
-<button id="clearBtn">Clear seen hashes</button>
 
 <div id="log">Log will appear here...\n</div>
 
@@ -65,8 +75,7 @@ const API_URL = PROXY_PREFIX + encodeURIComponent(REAL_API);
 const WEBHOOK_URL = "https://discord.com/api/webhooks/1461099803789492298/MHxU7LPJRmsLY2L5G5NnEvhH2Oj6XH-_jrzWek48H9oNzRS900d2uf19Yzmb13XXRWgc";
 
 const INTERVAL_MS = 2000;
-const STORAGE_KEY = "metascope_seen_v2";
-const MAX_ERRORS = 10;
+const MAX_ERRORS = 15;
 
 // ────────────────────────────────────────────────
 function log(msg) {
@@ -80,38 +89,13 @@ function setStatus(txt) {
   document.getElementById("status").textContent = `Status: ${txt}`;
 }
 
-async function sha256(str) {
-  const buf = new TextEncoder().encode(str);
-  const hash = await crypto.subtle.digest("SHA-256", buf);
-  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2,"0")).join("");
-}
-
-function canonical(data) {
-  return JSON.stringify(data, Object.keys(data).sort());
-}
-
-function loadSeen() {
-  try {
-    const s = localStorage.getItem(STORAGE_KEY);
-    return s ? new Set(JSON.parse(s)) : new Set();
-  } catch {
-    return new Set();
-  }
-}
-
-function saveSeen(set) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify([...set]));
-  } catch {}
-}
-
 async function sendDiscord(data) {
   const embed = {
-    title: "Metascope Update",
+    title: "Metascope API Response",
     description: "```json\n" + JSON.stringify(data, null, 2).slice(0, 3900) + "\n```",
     color: 0x57F287,
     timestamp: new Date().toISOString(),
-    footer: { text: "~2s • via proxy" }
+    footer: { text: "Every ~2s • no deduplication" }
   };
 
   try {
@@ -122,12 +106,13 @@ async function sendDiscord(data) {
     });
     if (!r.ok) {
       const txt = await r.text().catch(() => "?");
-      log(`Discord failed → ${r.status} ${txt.slice(0,120)}`);
+      log(`Discord → ${r.status} ${txt.slice(0,120)}`);
       return false;
     }
+    log("→ Sent to Discord");
     return true;
   } catch (err) {
-    log(`Discord error: ${err.message}`);
+    log(`Discord fetch error: ${err.message}`);
     return false;
   }
 }
@@ -135,9 +120,6 @@ async function sendDiscord(data) {
 // ────────────────────────────────────────────────
 let timer = null;
 let errors = 0;
-let seen = loadSeen();
-
-log(`Loaded ${seen.size} previous hashes`);
 
 async function checkOnce() {
   try {
@@ -145,22 +127,20 @@ async function checkOnce() {
       headers: { "Accept": "application/json" }
     });
 
-    if (!res.ok) throw new Error(`Proxy/API status ${res.status}`);
+    if (!res.ok) {
+      throw new Error(`API/proxy status ${res.status}`);
+    }
 
     const data = await res.json();
 
-    const hash = await sha256(canonical(data));
-
-    if (seen.has(hash)) return; // silent skip
-
-    seen.add(hash);
-    saveSeen(seen);
-
-    log("→ NEW DATA → sending to Discord");
-
+    log("Got response → sending");
     const ok = await sendDiscord(data);
-    if (ok) errors = 0;
-    else errors++;
+
+    if (ok) {
+      errors = 0;
+    } else {
+      errors++;
+    }
 
   } catch (err) {
     log(`Fetch failed: ${err.message}`);
@@ -168,7 +148,7 @@ async function checkOnce() {
   }
 
   if (errors >= MAX_ERRORS) {
-    log(`Too many errors (${errors}) → auto-stop`);
+    log(`\nToo many errors (${errors}) → auto stopping`);
     stop();
   }
 }
@@ -177,11 +157,11 @@ function start() {
   if (timer) return;
   errors = 0;
   timer = setInterval(checkOnce, INTERVAL_MS);
-  setStatus("polling");
+  setStatus("polling (every 2s)");
   document.getElementById("startBtn").disabled = true;
   document.getElementById("stopBtn").disabled = false;
-  log("Started");
-  checkOnce(); // immediate first check
+  log("Polling started – will send EVERY response");
+  checkOnce(); // first one right away
 }
 
 function stop() {
@@ -191,18 +171,11 @@ function stop() {
   setStatus("stopped");
   document.getElementById("startBtn").disabled = false;
   document.getElementById("stopBtn").disabled = true;
-  log("Stopped");
-}
-
-function clear() {
-  seen.clear();
-  localStorage.removeItem(STORAGE_KEY);
-  log("Seen hashes cleared");
+  log("Polling stopped");
 }
 
 document.getElementById("startBtn").onclick = start;
 document.getElementById("stopBtn").onclick  = stop;
-document.getElementById("clearBtn").onclick = clear;
 
 </script>
 </body>
